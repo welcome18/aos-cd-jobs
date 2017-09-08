@@ -1,49 +1,39 @@
-properties(
-  [
-    disableConcurrentBuilds()
-  ]
-)
+#!/usr/bin/env groovy
 
 // https://issues.jenkins-ci.org/browse/JENKINS-33511
 def set_workspace() {
-  if(env.WORKSPACE == null) {
-    env.WORKSPACE = WORKSPACE = pwd()
-  }
+    if(env.WORKSPACE == null) {
+        env.WORKSPACE = pwd()
+    }
 }
 
 node('openshift-build-1') {
-  try {
-    timeout(time: 30, unit: 'MINUTES') {
-      deleteDir()
-      set_workspace()
-      stage('clone') {
-        dir('aos-cd-jobs') {
-          checkout scm
-          sh 'git checkout master'
-        }
-      }
-      stage('run') {
-        sshagent(['openshift-bot']) { // git repo privileges stored in Jenkins credential store
-          sh '''\
-virtualenv env/
-. env/bin/activate
-pip install gitpython
-export PYTHONPATH=$PWD/aos-cd-jobs
-python aos-cd-jobs/aos_cd_jobs/pruner.py
-python aos-cd-jobs/aos_cd_jobs/updater.py
-'''
-        }
-      }
+    set_workspace()
+
+    properties(
+            [[$class              : 'ParametersDefinitionProperty',
+              parameterDefinitions:
+                      [
+                              [$class: 'hudson.model.ChoiceParameterDefinition', choices: "online-int\nonline-stg\nonline-prod", name: 'REPO', description: 'The repository to populate'],
+                              [$class: 'hudson.model.StringParameterDefinition', name: 'PACKAGES', description: 'Space delimited list of build NVRs (e.g. docker-1.12.6-30.git97ba2c0.el7). These builds will be pulled from brew and used to populate the specified repository.'],
+                      ]
+             ]]
+    )
+
+    // Force Jenkins to fail early if this is the first time this job has been run/and or new parameters have not been discovered.
+    echo "REPO:[${REPO}], PACKAGES:[${PACKAGES}]"
+
+    checkout scm
+
+    withCredentials([[
+            $class: 'FileBinding',
+            credentialsId: 'ocp-build.keytab',
+            variable: 'KEYTAB'
+        ]]) {
+        sh 'kinit -k -t $KEYTAB ocp-build/atomic-e2e-jenkins.rhev-ci-vms.eng.rdu2.redhat.com@REDHAT.COM'
     }
-  } catch(err) {
-    mail(
-      to: 'bbarcaro@redhat.com, jupierce@redhat.com',
-      from: "aos-cd@redhat.com",
-      subject: 'aos-cd-jobs-branches job: error',
-      body: """\
-Encoutered an error while running the aos-cd-jobs-branches job: ${err}\n\n
-Jenkins job: ${env.BUILD_URL}
-""")
-    throw err
-  }
+
+    // Run the script on rcm-guest in order to have the necessary privileges to push repos to mirrors.
+    sh "ssh ocp-build@rcm-guest.app.eng.bos.redhat.com sh -s ${REPO} ${PACKAGES} < ${env.WORKSPACE}/scripts/update-cluster-overrides.sh"
+
 }
