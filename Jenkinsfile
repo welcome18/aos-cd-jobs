@@ -1,49 +1,92 @@
-properties(
-  [
-    disableConcurrentBuilds()
-  ]
+#!/usr/bin/env groovy
+
+// A Job to run a smoke test in a cluster
+// 
+// It invokes the 'smoketest' operation of 'cicd-control.sh' for the specified cluster.
+// Optionally emails test results.
+
+@Library('aos_cd_ops') _
+
+// Ask the shared library which clusters this job should act on
+cluster_choice = aos_cd_ops_data.getClusterList("${env.BRANCH_NAME}").join("\n")  // Jenkins expects choice parameter to be linefeed delimited
+
+properties([
+        [   $class: 'ParametersDefinitionProperty',
+            parameterDefinitions: [
+                [
+                    $class: 'hudson.model.ChoiceParameterDefinition',
+                    choices: "${cluster_choice}",
+                    name: 'CLUSTER_SPEC',
+                    description: 'Cluster to run tests on',
+                ],
+                [
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: false,
+                    description: 'Send email notifications',
+                    name: 'MAIL_RESULTS'
+                ],
+                [
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: 'aos-devel@redhat.com',
+                    description: 'Success Mailing List',
+                    name: 'MAIL_LIST_SUCCESS'
+                ],
+                [
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: 'aos-qe@redhat.com',
+                    description: 'Failure Mailing List',
+                    name: 'MAIL_LIST_FAILURE'
+                ],
+            ]
+        ],
+    ]
 )
 
-// https://issues.jenkins-ci.org/browse/JENKINS-33511
-def set_workspace() {
-  if(env.WORKSPACE == null) {
-    env.WORKSPACE = WORKSPACE = pwd()
-  }
-}
-
 node('openshift-build-1') {
-  try {
-    timeout(time: 30, unit: 'MINUTES') {
-      deleteDir()
-      set_workspace()
-      stage('clone') {
-        dir('aos-cd-jobs') {
-          checkout scm
-          sh 'git checkout master'
+
+    def deploylib = load( "pipeline-scripts/deploylib.groovy" )
+    deploylib.initialize(CLUSTER_SPEC)
+
+    try {
+
+        stage( 'smoketest' ) {
+            sshagent([CLUSTER_ENV]) {
+                smoketest = deploylib.run("smoketest", null, true)
+                echo smoketest
+            }
         }
-      }
-      stage('run') {
-        sshagent(['openshift-bot']) { // git repo privileges stored in Jenkins credential store
-          sh '''\
-virtualenv env/
-. env/bin/activate
-pip install gitpython
-export PYTHONPATH=$PWD/aos-cd-jobs
-python aos-cd-jobs/aos_cd_jobs/pruner.py
-python aos-cd-jobs/aos_cd_jobs/updater.py
-'''
-        }
-      }
-    }
-  } catch(err) {
-    mail(
-      to: 'bbarcaro@redhat.com, jupierce@redhat.com',
-      from: "aos-cd@redhat.com",
-      subject: 'aos-cd-jobs-branches job: error',
-      body: """\
-Encoutered an error while running the aos-cd-jobs-branches job: ${err}\n\n
+
+        if ( MAIL_RESULTS.toBoolean() ) {
+            mail(
+                to: "${MAIL_LIST_SUCCESS}",
+                from: "aos-cd@redhat.com",
+                replyTo: 'jupierce@redhat.com',
+                subject: "Cluster smoke test succeeded: ${CLUSTER_NAME}",
+                body: """\
 Jenkins job: ${env.BUILD_URL}
-""")
-    throw err
-  }
+
+Smoke test output:
+${smoketest}
+""");
+
+        }
+
+    } catch ( err ) {
+        if ( MAIL_RESULTS.toBoolean() ) {
+            mail(to: "${MAIL_LIST_FAILURE}",
+                from: "aos-cd@redhat.com",
+                subject: "Error during smoke test on cluster ${CLUSTER_NAME}",
+                body: """Encountered an error: ${err}
+
+Jenkins job: ${env.BUILD_URL}
+
+Smoke test output:
+${smoketest}
+""");
+        }
+
+        // Re-throw the error in order to fail the job
+        throw err
+    }
+
 }
