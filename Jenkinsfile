@@ -1,59 +1,117 @@
+#!/usr/bin/env groovy
+
 properties(
-  [
-    disableConcurrentBuilds()
-  ]
+        [
+            buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '360')),
+            [$class : 'ParametersDefinitionProperty',
+              parameterDefinitions:
+                  [
+                          [
+                                  name: 'MAIL_LIST_FAILURE',
+                                  $class: 'hudson.model.StringParameterDefinition',
+                                  defaultValue: 'jupierce@redhat.com',
+                                  description: 'Failure Mailing List'
+                          ],
+                          [
+                                  name: 'MERGE_GATE_LABELS',
+                                  $class: 'hudson.model.ChoiceParameterDefinition',
+                                  choices: ['none', 'kind/bug'].join('\n'),
+                                  defaultValue: 'none',
+                                  description: 'Select what label is required to merge PRs'
+                          ],
+                          [
+                                  name: 'TEST_ONLY',
+                                  $class: 'hudson.model.BooleanParameterDefinition',
+                                  defaultValue: false,
+                                  description: 'Do not push results?',
+                          ],
+                          [
+                                  name: 'MOCK',
+                                  $class: 'hudson.model.BooleanParameterDefinition',
+                                  defaultValue: false,
+                                  description: 'Mock run to pickup new Jenkins parameters?',
+                          ],
+                          [
+                                  name: 'TARGET_NODE',
+                                  description: 'Jenkins agent node',
+                                  $class: 'hudson.model.StringParameterDefinition',
+                                  defaultValue: 'openshift-build-1'
+                          ],
+                  ]
+            ],
+            disableConcurrentBuilds()
+        ]
 )
 
-// https://issues.jenkins-ci.org/browse/JENKINS-33511
-def set_workspace() {
-  if(env.WORKSPACE == null) {
-    env.WORKSPACE = WORKSPACE = pwd()
-  }
+TEST_ONLY = TEST_ONLY.toBoolean()
+
+if ( MERGE_GATE_LABELS == "none" ) {
+    MERGE_GATE_LABELS = ""
 }
 
-node('openshift-build-1') {
-  try {
-    timeout(time: 30, unit: 'MINUTES') {
-      deleteDir()
-      set_workspace()
-      dir('aos-cd-jobs') {
-        stage('clone') {
-          checkout scm
-          sh 'git checkout master'
+def set_required_labels(template_filename, label) {
+    sq = readFile(template_filename)
+    sq = sq.replaceAll('additional-required-labels: ".*"', "additional-required-labels: \"${label}\"")
+    writeFile file:template_filename, text:sq
+}
+
+node(TARGET_NODE) {
+
+    checkout scm
+
+    def commonlib = load( "pipeline-scripts/commonlib.groovy")
+    commonlib.initialize()
+
+    try {
+
+        MERGE_GATE_LABELS = REQUIRED_LABEL
+
+        sshagent(["openshift-bot"]) {
+
+            if ( MERGE_GATE_LABELS != null ) {
+                    // Clone release tools to manage merge gate label
+                    sh "rm -rf release"
+                    sh "git clone git@github.com:openshift/release.git"
+                    dir ("release/cluster/ci/config/submit-queue") {
+                        set_required_labels("submit_queue.yaml", MERGE_GATE_LABELS)
+                        set_required_labels("submit_queue_openshift_ansible.yaml", MERGE_GATE_LABELS)
+                        set_required_labels("submit_queue_origin_aggregated_logging.yaml", MERGE_GATE_LABELS)
+
+                        sh "git add -u"
+                        sh "git commit --allow-empty -m 'Setting required-labels to: ${MERGE_GATE_LABELS}'"
+
+                        if ( ! TEST_ONLY ) {
+                            sh "git push"
+                        } else {
+                            echo "SKIPPING PUSH SINCE THIS IS A TEST RUN"
+                        }
+
+                        EXTRA_ARGS=""
+                        if ( TEST_ONLY ) {
+                            echo "RUNNING APPLY IN DRY-RUN SINCE THIS IS A TEST RUN"
+                            EXTRA_ARGS="--dry-run"
+                        }
+
+                        withCredentials([string(credentialsId: 'aos-cd-sprint-control-token', variable: 'TOKEN')]) {
+                            sh "oc-3.7 process -f submit_queue.yaml | oc-3.7 -n ci --server=${CI_SERVER} --token=$TOKEN apply ${EXTRA_ARGS} -f -"
+                            sh "oc-3.7 process -f submit_queue_openshift_ansible.yaml | oc-3.7 -n ci --server=${CI_SERVER} --token=$TOKEN apply ${EXTRA_ARGS} -f -"
+                            sh "oc-3.7 process -f submit_queue_origin_aggregated_logging.yaml | oc-3.7 -n ci --server=${CI_SERVER} --token=$TOKEN apply ${EXTRA_ARGS} -f -"
+                        }
+                    }
+            }
+
         }
-        stage('run') {
-          final url = sh(
-            returnStdout: true,
-            script: 'git config remote.origin.url')
-          if(!(url =~ /^[-\w]+@[-\w]+(\.[-\w]+)*:/)) {
-            error('This job uses ssh keys for auth, please use an ssh url')
-          }
-          def prune = true, key = 'openshift-bot'
-          if(url.trim() != 'git@github.com:openshift/aos-cd-jobs.git') {
-            prune = false
-            key = "${(url =~ /.*:([^\/]+)/)[0][1]}-aos-cd-bot"
-          }
-          sshagent([key]) {
-            sh """\
-virtualenv ../env/
-. ../env/bin/activate
-pip install gitpython
-${prune ? 'python -m aos_cd_jobs.pruner' : 'echo Fork, skipping pruner'}
-python -m aos_cd_jobs.updater
-"""
-          }
-        }
-      }
+
+    } catch ( err ) {
+        mail(to: "${MAIL_LIST_FAILURE}",
+                from: "aos-cd@redhat.com",
+                subject: "Error running sprint control",
+                body: """${err}
+
+    Jenkins job: ${env.BUILD_URL}
+    """);
+        throw err
     }
-  } catch(err) {
-    mail(
-      to: 'bbarcaro@redhat.com, jupierce@redhat.com',
-      from: "aos-cd@redhat.com",
-      subject: 'aos-cd-jobs-branches job: error',
-      body: """\
-Encoutered an error while running the aos-cd-jobs-branches job: ${err}\n\n
-Jenkins job: ${env.BUILD_URL}
-""")
-    throw err
-  }
+
+
 }
