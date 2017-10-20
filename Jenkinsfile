@@ -474,13 +474,16 @@ node(TARGET_NODE) {
         // OIT Method
         OIT_WORKING = pwd(tmp:true)
 
+        //Clear out if previously in use
+        sh "rm -rf ${OIT_WORKING}/*"
+
         stage( "update dist-git" ) {
           buildlib.write_sources_file()
           buildlib.oit """
 --working-dir ${OIT_WORKING} --group 'openshift-${BUILD_VERSION}' --include aos3-installation-docker \\
 distgits:rebase --sources ${env.WORKSPACE}/sources.yml --version ${NEW_VERSION} \\
 --release ${NEW_DOCKERFILE_RELEASE} \\
---message 'Updating Dockerfile version and release ${NEW_VERSION}-${NEW_DOCKERFILE_RELEASE} --push'
+--message 'Updating Dockerfile version and release ${NEW_VERSION}-${NEW_DOCKERFILE_RELEASE}' --push
 """
         }
 
