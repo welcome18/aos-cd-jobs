@@ -12,7 +12,6 @@ LIFT_STAGE_CUT_DAYS_LEFT = 19  // First Sunday
 properties(
         [
             buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '360')),
-            pipelineTriggers([cron('00 20 * * *')]),
             [$class : 'ParametersDefinitionProperty',
           parameterDefinitions:
                   [
@@ -122,6 +121,8 @@ node(TARGET_NODE) {
 
     try {
 
+        error("Sprint job temporarily disabled - should not be triggered by external timer")
+            
         FEATURE_COMPLETE_BODY = readFile( "emails/feature_complete" )
 
         DEV_CUT_BODY = readFile( "emails/devcut_start" )
