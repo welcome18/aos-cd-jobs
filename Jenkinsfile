@@ -1,59 +1,44 @@
-properties(
-  [
-    disableConcurrentBuilds()
-  ]
-)
+#!/usr/bin/env groovy
 
 // https://issues.jenkins-ci.org/browse/JENKINS-33511
 def set_workspace() {
-  if(env.WORKSPACE == null) {
-    env.WORKSPACE = WORKSPACE = pwd()
-  }
+    if(env.WORKSPACE == null) {
+        env.WORKSPACE = pwd()
+    }
 }
 
-node('openshift-build-1') {
-  try {
-    timeout(time: 30, unit: 'MINUTES') {
-      deleteDir()
-      set_workspace()
-      dir('aos-cd-jobs') {
-        stage('clone') {
-          checkout scm
-          sh 'git checkout master'
-        }
-        stage('run') {
-          final url = sh(
-            returnStdout: true,
-            script: 'git config remote.origin.url')
-          if(!(url =~ /^[-\w]+@[-\w]+(\.[-\w]+)*:/)) {
-            error('This job uses ssh keys for auth, please use an ssh url')
-          }
-          def prune = true, key = 'openshift-bot'
-          if(url.trim() != 'git@github.com:openshift/aos-cd-jobs.git') {
-            prune = false
-            key = "${(url =~ /.*:([^\/]+)/)[0][1]}-aos-cd-bot"
-          }
-          sshagent([key]) {
-            sh """\
-virtualenv ../env/
-. ../env/bin/activate
-pip install gitpython
-${prune ? 'python -m aos_cd_jobs.pruner' : 'echo Fork, skipping pruner'}
-python -m aos_cd_jobs.updater
-"""
-          }
-        }
-      }
-    }
-  } catch(err) {
-    mail(
-      to: 'bbarcaro@redhat.com, jupierce@redhat.com',
-      from: "aos-cd@redhat.com",
-      subject: 'aos-cd-jobs-branches job: error',
-      body: """\
-Encoutered an error while running the aos-cd-jobs-branches job: ${err}\n\n
-Jenkins job: ${env.BUILD_URL}
-""")
-    throw err
-  }
+// Expose properties for a parameterized build
+properties(
+        [
+                disableConcurrentBuilds(),
+                [$class: 'ParametersDefinitionProperty',
+                 parameterDefinitions:
+                         [
+                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'openshift-build-1', description: 'Jenkins agent node', name: 'TARGET_NODE'],
+
+                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'aos-cicd@redhat.com', description: 'Success Mailing List', name: 'MAIL_LIST_SUCCESS'],
+                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'jupierce@redhat.com', description: 'Failure Mailing List', name: 'MAIL_LIST_FAILURE'],
+
+                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: '', description: 'Specify only if the updater should run against a specific AMI without using tags to locate it.', name: 'SOURCE_AMI'],
+
+                                 [$class: 'hudson.model.TextParameterDefinition', defaultValue: '', description: 'Line delimited tags (K=V) to use to find the AMI to update (the latest AMI with these tags will be located)', name: 'SOURCE_SEARCH_TAGS'],
+                                 [$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Select if search should find non-standard AMIs?.', name: 'SOURCE_NON_STANDARD'],
+
+                                 [$class: 'hudson.model.TextParameterDefinition', defaultValue: '', description: 'Line delimited tags (K=V) to add to the resultant AMI (in addition to those from the source AMI)', name: 'DEST_ADD_TAGS'],
+                                 [$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Select if destination AMI be labeled non-standard', name: 'DEST_NON_STANDARD'],
+
+                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: false, description: 'Mock run to pickup new Jenkins parameters?', name: 'MOCK'],
+                         ]
+                ],
+        ]
+)
+
+if ( MOCK.toBoolean() ) {
+    error( "Ran in mock mode to pick up any new parameters" )
+}
+
+node(TARGET_NODE) {
+    /**
+     *
+     */
 }
