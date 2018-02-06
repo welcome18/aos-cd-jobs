@@ -74,6 +74,7 @@ if ( MOCK.toBoolean() ) {
 
 node(TARGET_NODE) {
     try {
+        checkout scm
         set_workspace()
         def buildlib = load('pipeline-scripts/buildlib.groovy')
         stage('venv') {
@@ -84,10 +85,9 @@ env/bin/pip install --upgrade ansible boto boto3
 '''
         }
         stage('build') {
-            checkout scm
             withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'ami-build-creds']]) {
                 withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
-                    sshagent([AWS_SSH_KEY_USER]) {
+                    sshagent(['ami_builder_key']) {
                         buildlib.with_virtualenv('env') {
                             // we need to build the options to pass into the ansible script
                             def anible_arg_ami_id = convert_property_to_ansible_arg('cli_image_id', SOURCE_AMI_ID)
