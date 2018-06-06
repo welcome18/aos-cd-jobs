@@ -2,35 +2,139 @@
 
 // Expose properties for a parameterized build
 properties(
+    [
+        buildDiscarder(
+            logRotator(
+                artifactDaysToKeepStr: '',
+                artifactNumToKeepStr: '',
+                daysToKeepStr: '',
+                numToKeepStr: '1000')),
         [
-                buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '1000')),
-                [$class              : 'ParametersDefinitionProperty',
-                 parameterDefinitions:
-                         [
-                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'openshift-build-1', description: 'Jenkins agent node', name: 'TARGET_NODE'],
-                                 [$class: 'hudson.model.ChoiceParameterDefinition', choices: "git@github.com:openshift\ngit@github.com:jupierce\ngit@github.com:jupierce-aos-cd-bot\ngit@github.com:adammhaile-aos-cd-bot", defaultValue: 'git@github.com:openshift', description: 'Github base for repos', name: 'GITHUB_BASE'],
-                                 [$class: 'hudson.model.ChoiceParameterDefinition', choices: "openshift-bot\naos-cd-test\njupierce-aos-cd-bot\nadammhaile-aos-cd-bot", defaultValue: 'aos-cd-test', description: 'SSH credential id to use', name: 'SSH_KEY_ID'],
-                                 [$class: 'hudson.model.ChoiceParameterDefinition', choices: "3.10\n3.9\n3.8\n3.7\n3.6\n3.5\n3.4\n3.3", defaultValue: '3.10', description: 'OCP Version to build', name: 'BUILD_VERSION'],
-                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'aos-cicd@redhat.com, aos-qe@redhat.com,jupierce@redhat.com,smunilla@redhat.com,ahaile@redhat.com', description: 'Success Mailing List', name: 'MAIL_LIST_SUCCESS'],
-                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: 'jupierce@redhat.com,smunilla@redhat.com,ahaile@redhat.com,bbarcaro@redhat.com,mlamouri@redhat.com', description: 'Failure Mailing List', name: 'MAIL_LIST_FAILURE'],
-                                 [$class             : 'hudson.model.ChoiceParameterDefinition', choices: "release\npre-release\nonline:int\nonline:stg", description:
-                                         '''
+            $class: 'ParametersDefinitionProperty',
+            parameterDefinitions: [
+                [
+                    name: 'TARGET_NODE',
+                    description: 'Jenkins agent node',
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: 'openshift-build-1'
+                ],
+                [
+                    name: 'GITHUB_BASE',
+                    description: 'Github base for repos',
+                    $class: 'hudson.model.ChoiceParameterDefinition',
+                    choices: [
+                        "git@github.com:openshift",
+                        "git@github.com:jupierce",
+                        "git@github.com:jupierce-aos-cd-bot",
+                        "git@github.com:adammhaile-aos-cd-bot"
+                    ].join("\n"),
+                    defaultValue: 'git@github.com:openshift'
+                ],
+                [
+                    name: 'SSH_KEY_ID',
+                    description: 'SSH credential id to use',
+                    $class: 'hudson.model.ChoiceParameterDefinition',
+                    choices: [
+                        "openshift-bot",
+                        "aos-cd-test",
+                        "jupierce-aos-cd-bot",
+                        "adammhaile-aos-cd-bot"
+                    ].join("\n"),
+                    defaultValue: 'aos-cd-test'
+                ],
+                [
+                    name: 'BUILD_VERSION',
+                    description: 'OCP Version to build',
+                    $class: 'hudson.model.ChoiceParameterDefinition',
+                    choices: "3.10\n3.9\n3.8\n3.7\n3.6\n3.5\n3.4\n3.3",
+                    defaultValue: '3.10'
+                ],
+                [
+                    name: 'MAIL_LIST_SUCCESS',
+                    description: 'Success Mailing List',
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: [
+                        'aos-cicd@redhat.com',
+                        'aos-qe@redhat.com',
+                        'jupierce@redhat.com',
+                        'smunilla@redhat.com',
+                        'ahaile@redhat.com'
+                    ].join(',')
+                ],
+                [
+                    name: 'MAIL_LIST_FAILURE',
+                    description: 'Failure Mailing List',
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: [
+                        'jupierce@redhat.com',
+                        'smunilla@redhat.com',
+                        'ahaile@redhat.com',
+                        'bbarcaro@redhat.com',
+                        'mlamouri@redhat.com'
+                    ].join(',')
+                ],
+                [
+                    name: 'BUILD_MODE',
+                    description: '''
 release                   {ose,origin-web-console,openshift-ansible}/release-X.Y ->  https://mirror.openshift.com/enterprise/enterprise-X.Y/<br>
 pre-release               {origin,origin-web-console,openshift-ansible}/release-X.Y ->  https://mirror.openshift.com/enterprise/enterprise-X.Y/<br>
 online:int                {origin,origin-web-console,openshift-ansible}/master -> online-int yum repo<br>
 online:stg                {origin,origin-web-console,openshift-ansible}/stage -> online-stg yum repo<br>
-''', name: 'BUILD_MODE'],
-                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: false, description: 'Sign RPMs with openshifthosted?', name: 'SIGN'],
-                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: false, description: 'Mock run to pickup new Jenkins parameters?', name: 'MOCK'],
-                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: false, description: 'Run as much code as possible without pushing / building?', name: 'TEST'],
-                                 [$class: 'hudson.model.TextParameterDefinition', defaultValue: "", description: 'Include special notes in the build email?', name: 'SPECIAL_NOTES'],
-                                 [$class: 'hudson.model.StringParameterDefinition', defaultValue: "", description: 'Exclude these images from builds. Comma or space separated list. (i.e cri-o-docker,aos3-installation-docker)', name: 'BUILD_EXCLUSIONS'],
-                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: true, description: 'Build container images?', name: 'BUILD_CONTAINER_IMAGES'],
-                                 [$class: 'hudson.model.BooleanParameterDefinition', defaultValue: true, description: 'Build golden image after building images?', name: 'BUILD_AMI'],
-                         ]
+''',
+                    $class: 'hudson.model.ChoiceParameterDefinition',
+                    choices: [
+                        "release",
+                        "pre-release",
+                        "online:int",
+                        "online:stg"
+                    ].join(',')
                 ],
-                disableConcurrentBuilds()
-        ]
+                [
+                    name: 'SIGN',
+                    description: 'Sign RPMs with openshifthosted?',
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: false
+                ],
+                [
+                    name: 'MOCK',
+                    description: 'Mock run to pickup new Jenkins parameters?',
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: false
+                ],
+                [
+                    name: 'TEST',
+                    description: 'Run as much code as possible without pushing / building?',
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: false
+                ],
+                [
+                    name: 'SPECIAL_NOTES',
+                    description: 'Include special notes in the build email?',
+                    $class: 'hudson.model.TextParameterDefinition',
+                    defaultValue: ""
+                ],
+                [
+                    name: 'BUILD_EXCLUSIONS',
+                    description: 'Exclude these images from builds. Comma or space separated list. (i.e cri-o-docker,aos3-installation-docker)',
+                    $class: 'hudson.model.StringParameterDefinition',
+                    defaultValue: ""
+                ],
+                [
+                    name: 'BUILD_CONTAINER_IMAGES',
+                    description: 'Build container images?',
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: true
+                ],
+                [
+                    name: 'BUILD_AMI',
+                    description: 'Build golden image after building images?',
+                    $class: 'hudson.model.BooleanParameterDefinition',
+                    defaultValue: true
+                ],
+            ]
+        ],
+        disableConcurrentBuilds()
+    ]
 )
 
 IS_TEST_MODE = TEST.toBoolean()
@@ -75,6 +179,8 @@ def mail_success(version, mirrorURL, record_log) {
     def timing_report = get_build_timing_report(record_log)
     def image_list = get_image_build_report(record_log)
 
+    def oa_changelog = get_rpm_changelog(record_log, "openshift-ansible")
+
     PARTIAL = " "
     exclude_subject = ""
     if (BUILD_EXCLUSIONS != "") {
@@ -111,7 +217,6 @@ ${image_details}
 
 Brew:
   - Openshift: ${OSE_BREW_URL}
-  - OpenShift Ansible: ${OA_BREW_URL}
 
 Jenkins job: ${env.BUILD_URL}
 
@@ -126,7 +231,7 @@ Are your OpenShift Ansible changes in this build? Check here:
 https://github.com/openshift/openshift-ansible/commits/openshift-ansible-${NEW_VERSION}-${NEW_RELEASE}/
 
 ===OpenShift Ansible changelog snippet===
-${OA_CHANGELOG}
+${oa_changelog}
 """);
 
     try {
@@ -137,7 +242,6 @@ ${OA_CHANGELOG}
                           puddle_url=${mirrorURL}/${OCP_PUDDLE}
                           image_registry_root=registry.reg-aws.openshift.com:443
                           brew_task_url_openshift=${OSE_BREW_URL}
-                          brew_task_url_openshift_ansible=${OA_BREW_URL}
                           product=OpenShift Container Platform
                           """,
                         messageType: 'ProductBuildDone',
@@ -188,6 +292,29 @@ def get_image_build_report(record_log) {
 
     return "\nImages included in build:\n    " +
         image_set.toSorted().join("\n    ")
+}
+
+// Search the RPM build logs for the named package
+// extract the path to the spec file and return the changelog section.
+def get_rpm_changelog(record_log, package_name) {
+    rpms = record_log['build_rpm']
+
+    // find the named package and the spec file path
+    specfile_path = None
+    for (i = 0 ; i < rpms.size(); i++) {
+        if (rpms[i]['distgit_key'] == package_name) {
+            specfile_path = rpms[i]['specfile']
+            break
+        }
+    }
+
+    // if no matching package found, return an empty string
+    if (specfile_path == None) {
+        return ""
+    }
+
+    // read the spec file and extract the changelog
+    return buildlib.read_changelog(specfile_path)
 }
 
 // Will be used to track which atomic-openshift build was tagged before we ran.
@@ -269,10 +396,6 @@ node(TARGET_NODE) {
                         sh "git checkout ${WEB_CONSOLE_SERVER_BRANCH}"
                     }
                 }
-            }
-
-            stage("openshift-ansible repo") {
-                buildlib.initialize_openshift_ansible()
             }
 
             stage("analyze") {
@@ -538,49 +661,6 @@ node(TARGET_NODE) {
                 }
             }
 
-            stage("openshift-ansible prep") {
-                OPENSHIFT_ANSIBLE_SOURCE_BRANCH = "master"
-                dir(OPENSHIFT_ANSIBLE_DIR) {
-                    if (BUILD_MODE == "online:stg") {
-                        sh "git checkout -b stage origin/stage"
-                        OPENSHIFT_ANSIBLE_SOURCE_BRANCH = "stage"
-                    } else {
-                        if (!IS_SOURCE_IN_MASTER) {
-                            // At 3.6, openshift-ansible switched from release-1.X to match 3.X release branches
-                            if (BUILD_VERSION_MAJOR == 3 && BUILD_VERSION_MINOR < 6) {
-                                OPENSHIFT_ANSIBLE_SOURCE_BRANCH = "release-1.${BUILD_VERSION_MINOR}"
-                            } else {
-                                OPENSHIFT_ANSIBLE_SOURCE_BRANCH = "release-${BUILD_VERSION}"
-                            }
-                            sh "git checkout -b ${OPENSHIFT_ANSIBLE_SOURCE_BRANCH} origin/${OPENSHIFT_ANSIBLE_SOURCE_BRANCH}"
-                        } else {
-                            sh "git checkout master"
-                        }
-                    }
-                }
-            }
-
-            stage("openshift-ansible tag") {
-                dir(OPENSHIFT_ANSIBLE_DIR) {
-                    if (BUILD_VERSION_MAJOR == 3 && BUILD_VERSION_MINOR < 6) {
-                        // Use legacy versioning if < 3.6
-                        sh "tito tag --debug --accept-auto-changelog"
-                    } else {
-                        // If >= 3.6, keep openshift-ansible in sync with OCP version
-                        buildlib.set_rpm_spec_version("openshift-ansible.spec", NEW_VERSION)
-                        buildlib.set_rpm_spec_release_prefix("openshift-ansible.spec", NEW_RELEASE)
-                        // Note that I did not use --use-release because it did not maintain variables like %{?dist}
-                        sh "tito tag --debug --accept-auto-changelog --keep-version --debug"
-                    }
-
-                    if (!IS_TEST_MODE) {
-                        sh "git push"
-                        sh "git push --tags"
-                    }
-                    OA_CHANGELOG = buildlib.read_changelog("openshift-ansible.spec")
-                }
-            }
-
             if (IS_TEST_MODE) {
                 error("This is as far as the test process can proceed without triggering builds")
             }
@@ -596,13 +676,6 @@ node(TARGET_NODE) {
                     OSE_BREW_URL = "https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=${OSE_TASK_ID}"
                     echo "ose rpm brew task: ${OSE_BREW_URL}"
                 }
-                dir(OPENSHIFT_ANSIBLE_DIR) {
-                    OA_TASK_ID = sh(returnStdout: true,
-                            script: "tito release --debug --yes --test aos-${BUILD_VERSION} | grep 'Created task:' | awk '{print \$3}'"
-                    )
-                    OA_BREW_URL = "https://brewweb.engineering.redhat.com/brew/taskinfo?taskID=${OA_TASK_ID}"
-                    echo "openshift-ansible rpm brew task: ${OA_BREW_URL}"
-                }
 
                 // Watch the tasks to make sure they succeed. If one fails, make sure the user knows which one by providing the correct brew URL
                 try {
@@ -610,12 +683,6 @@ node(TARGET_NODE) {
                 } catch (ose_err) {
                     echo "Error in ose build task: ${OSE_BREW_URL}"
                     throw ose_err
-                }
-                try {
-                    sh "brew watch-task ${OA_TASK_ID}"
-                } catch (oa_err) {
-                    echo "Error in openshift-ansible build task: ${OA_BREW_URL}"
-                    throw oa_err
                 }
             }
 
@@ -667,7 +734,6 @@ images:rebase --version v${NEW_VERSION}
 
             SOURCE_BRANCHES = [
                     "ose"              : OSE_SOURCE_BRANCH,
-                    "openshift-ansible": OPENSHIFT_ANSIBLE_SOURCE_BRANCH
             ]
             for (i = 0; i < distgit_notify.size(); i++) {
                 distgit = distgit_notify[i][0]
